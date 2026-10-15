@@ -87,7 +87,7 @@ export function initializeMainProcessAccountServices(): void {
       getSettings: () => store.getSettings(),
       rateLimits: state.rateLimits,
       accounts: state.claudeAccounts,
-      onSwitched: ({ from, to }) => {
+      onSwitched: ({ from, to, usedPercent }) => {
         if (!store.getSettings().notifications.enabled) {
           return
         }
@@ -95,8 +95,8 @@ export function initializeMainProcessAccountServices(): void {
           title: translateMain('accounts.claude.autoSwitchedTitle', 'Claude account switched'),
           body: translateMain(
             'accounts.claude.autoSwitchedBody',
-            '{{from}} is near its usage limit. New Claude sessions start on {{to}}.',
-            { from, to }
+            '{{from}} reached {{percent}}% of its usage limit. New Claude sessions start on {{to}}.',
+            { from, to, percent: Math.round(usedPercent) }
           )
         })
       }

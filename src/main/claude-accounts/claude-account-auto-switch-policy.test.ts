@@ -38,11 +38,13 @@ const COOLED_DOWN = CLAUDE_AUTO_SWITCH_COOLDOWN_MS
 function pick(
   active: ProviderRateLimits,
   candidates: InactiveAccountUsage[],
-  msSinceLastSwitch: number
+  msSinceLastSwitch: number,
+  thresholdPercent = 90
 ): string | null {
   return pickClaudeAutoSwitchTarget(active, candidates, {
     now: NOW,
-    lastSwitchAt: NOW - msSinceLastSwitch
+    lastSwitchAt: NOW - msSinceLastSwitch,
+    thresholdPercent
   })
 }
 
@@ -118,6 +120,22 @@ describe('pickClaudeAutoSwitchTarget', () => {
 
     expect(pick(allEnded(100), [usage('b', limits(0))], COOLED_DOWN)).toBe(null)
     expect(pick(limits(95), [usage('b', allEnded(100))], COOLED_DOWN)).toBe('b')
+  })
+
+  it('moves at a lower line when one is chosen', () => {
+    expect(pick(limits(80), [usage('b', limits(30))], COOLED_DOWN, 80)).toBe('b')
+    expect(pick(limits(79), [usage('b', limits(30))], COOLED_DOWN, 80)).toBe(null)
+  })
+
+  it('at a higher line, still needs the target under that line and clearly better', () => {
+    expect(pick(limits(94), [usage('b', limits(10))], COOLED_DOWN, 95)).toBe(null)
+    expect(pick(limits(96), [usage('b', limits(85))], COOLED_DOWN, 95)).toBe('b')
+    expect(pick(limits(96), [usage('b', limits(90))], COOLED_DOWN, 95)).toBe(null)
+  })
+
+  it('with the line at the limit, waits until the account is out', () => {
+    expect(pick(limits(99), [usage('b', limits(0))], COOLED_DOWN, 100)).toBe(null)
+    expect(pick(limits(100), [usage('b', limits(97))], 0, 100)).toBe('b')
   })
 
   it('stays when every account is out', () => {

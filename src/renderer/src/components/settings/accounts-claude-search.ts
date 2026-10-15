@@ -26,7 +26,7 @@ export const getAccountsClaudeSearchEntries = createLocalizedCatalog(() => [
     title: translate('accounts.claude.autoSwitch', 'Switch accounts before a usage limit'),
     description: translate(
       'accounts.claude.autoSwitchDescription',
-      'When the selected account passes 90% of its 5-hour or weekly limit, new Claude sessions start on the account with the most room left. Running sessions keep their account.'
+      'When the selected account nears its 5-hour or weekly limit, new Claude sessions start on the account with the most room left. Choose how close, and which accounts take part.'
     ),
     keywords: [
       ...translateSearchKeyword('auto.components.settings.accounts.search.e14049e1a8', 'claude'),
@@ -40,7 +40,8 @@ export const getAccountsClaudeSearchEntries = createLocalizedCatalog(() => [
         'auto.components.settings.accounts.search.cursor.kw.usage',
         'usage'
       ),
-      ...translateSearchKeyword('accounts.claude.keyword.auto', 'auto')
+      ...translateSearchKeyword('accounts.claude.keyword.auto', 'auto'),
+      ...translateSearchKeyword('accounts.claude.keyword.threshold', 'threshold')
     ]
   }
 ])

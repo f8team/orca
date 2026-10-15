@@ -320,6 +320,10 @@ export type GlobalSettings = NativeChatGlobalSettings & {
   claudeCopiedSystemDefaultNoticeDismissed?: boolean
   /** Opt-in: new Claude sessions move to the managed account with the most room before a usage limit; optional for legacy settings. */
   claudeAutoSwitchEnabled?: boolean
+  /** Usage percent of the tightest window that triggers the switch; one of the Settings presets, 90 when unset. */
+  claudeAutoSwitchThresholdPercent?: number
+  /** Managed accounts the switch never moves to or away from; picking one by hand still works. */
+  claudeAutoSwitchExcludedAccountIds?: string[]
   /** Per-worktree shell history so ArrowUp doesn't surface other worktrees' commands (a HISTFILE for
    *  bash/zsh, a `fish_history` session name for fish). Defaults to true. */
   terminalScopeHistoryByWorktree: boolean

@@ -167,4 +167,14 @@ describe('Claude accounts section', () => {
       /aria-label="Switch accounts before a usage limit"[^>]*aria-checked="true"|aria-checked="true"[^>]*aria-label="Switch accounts before a usage limit"/
     )
   })
+
+  it('shows the line and the accounts to switch between only while auto-switching is on', () => {
+    const accounts = [account('a', 'a@example.test'), account('b', 'b@example.test')]
+    const off = render({ accounts })
+    const on = render({ accounts }, { claudeAutoSwitchEnabled: true })
+
+    expect(off).not.toContain('Accounts to switch between')
+    expect(on).toContain('Switch at')
+    expect(on).toContain('Accounts to switch between')
+  })
 })

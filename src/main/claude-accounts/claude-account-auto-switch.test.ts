@@ -125,7 +125,53 @@ describe('createClaudeAccountAutoSwitch', () => {
     await vi.runAllTimersAsync()
 
     expect(selectAccount).toHaveBeenCalledWith('c', HOST, expect.any(Function))
-    expect(onSwitched).toHaveBeenCalledWith({ from: 'a@example.com', to: 'c@example.com' })
+    expect(onSwitched).toHaveBeenCalledWith({
+      from: 'a@example.com',
+      to: 'c@example.com',
+      usedPercent: 95
+    })
+  })
+
+  it('switches at the line chosen in Settings', async () => {
+    const { settings, autoSwitch, selectAccount } = setup()
+    settings.claudeAutoSwitchThresholdPercent = 80
+
+    autoSwitch(usageState(limits(85), { b: limits(50), c: limits(20) }))
+    await vi.runAllTimersAsync()
+
+    expect(selectAccount).toHaveBeenCalledWith('c', HOST, expect.any(Function))
+  })
+
+  it('keeps 90% for a stored line Settings does not offer', async () => {
+    const { settings, autoSwitch, selectAccount } = setup()
+    settings.claudeAutoSwitchThresholdPercent = 42
+
+    autoSwitch(usageState(limits(85), { b: limits(0), c: limits(0) }))
+    await vi.runAllTimersAsync()
+
+    expect(selectAccount).not.toHaveBeenCalled()
+  })
+
+  it('never moves to an account turned off for switching', async () => {
+    const { settings, autoSwitch, selectAccount } = setup()
+    settings.claudeAutoSwitchExcludedAccountIds = ['c']
+
+    // c has the most room, but only b takes part; c needs no fresh reading either.
+    autoSwitch(usageState(limits(95), { b: limits(50) }))
+    await vi.runAllTimersAsync()
+
+    expect(selectAccount).toHaveBeenCalledWith('b', HOST, expect.any(Function))
+  })
+
+  it('leaves an account turned off for switching selected, even at its limit', async () => {
+    const { settings, autoSwitch, selectAccount, fetchInactiveUsage } = setup()
+    settings.claudeAutoSwitchExcludedAccountIds = ['a']
+
+    autoSwitch(usageState(limits(100), { b: limits(0), c: limits(0) }))
+    await vi.runAllTimersAsync()
+
+    expect(selectAccount).not.toHaveBeenCalled()
+    expect(fetchInactiveUsage).not.toHaveBeenCalled()
   })
 
   it('does nothing while auto-switch is off', () => {

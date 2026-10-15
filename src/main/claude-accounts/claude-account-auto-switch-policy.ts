@@ -1,13 +1,15 @@
 import type { InactiveAccountUsage, ProviderRateLimits } from '../../shared/rate-limit-types'
 
-const CLAUDE_AUTO_SWITCH_THRESHOLD_PERCENT = 90
 // Why: a switch only reaches the next Claude started, so a fresh pick needs time to be used.
 export const CLAUDE_AUTO_SWITCH_COOLDOWN_MS = 5 * 60_000
 // Why: an account only a few points under the line would cross it again within minutes.
 const MIN_PERCENT_GAINED = 10
 
 /** The tightest 5-hour or weekly window still running (0 once both reset), or null when usage could not be read. */
-function getClaudeUsedPercent(limits: ProviderRateLimits | null, now: number): number | null {
+export function getClaudeUsedPercent(
+  limits: ProviderRateLimits | null,
+  now: number
+): number | null {
   if (limits?.status !== 'ok') {
     return null
   }
@@ -22,19 +24,24 @@ function getClaudeUsedPercent(limits: ProviderRateLimits | null, now: number): n
 
 export function isClaudeOverAutoSwitchLine(
   limits: ProviderRateLimits | null,
-  now: number
+  now: number,
+  thresholdPercent: number
 ): boolean {
-  return (getClaudeUsedPercent(limits, now) ?? 0) >= CLAUDE_AUTO_SWITCH_THRESHOLD_PERCENT
+  return (getClaudeUsedPercent(limits, now) ?? 0) >= thresholdPercent
 }
 
 /** The account new Claude sessions should move to, or null to stay. */
 export function pickClaudeAutoSwitchTarget(
   active: ProviderRateLimits | null,
   candidates: InactiveAccountUsage[],
-  { now, lastSwitchAt }: { now: number; lastSwitchAt: number }
+  {
+    now,
+    lastSwitchAt,
+    thresholdPercent
+  }: { now: number; lastSwitchAt: number; thresholdPercent: number }
 ): string | null {
   const used = getClaudeUsedPercent(active, now)
-  if (used === null || used < CLAUDE_AUTO_SWITCH_THRESHOLD_PERCENT) {
+  if (used === null || used < thresholdPercent) {
     return null
   }
   const atLimit = used >= 100
@@ -56,7 +63,6 @@ export function pickClaudeAutoSwitchTarget(
   if (atLimit) {
     return best.accountId
   }
-  const clearlyBetter =
-    best.used < CLAUDE_AUTO_SWITCH_THRESHOLD_PERCENT && best.used <= used - MIN_PERCENT_GAINED
+  const clearlyBetter = best.used < thresholdPercent && best.used <= used - MIN_PERCENT_GAINED
   return clearlyBetter ? best.accountId : null
 }

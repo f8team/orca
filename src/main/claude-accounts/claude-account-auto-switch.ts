@@ -1,3 +1,7 @@
+import {
+  getClaudeAutoSwitchThresholdPercent,
+  isClaudeAccountInAutoSwitch
+} from '../../shared/claude-auto-switch-settings'
 import type { GlobalSettings } from '../../shared/global-settings-types'
 import type { ClaudeManagedAccountSummary } from '../../shared/managed-account-types'
 import type {
@@ -8,6 +12,7 @@ import type {
 import type { RateLimitService } from '../rate-limits/service'
 import { DEFAULT_POLL_MS } from '../rate-limits/service/service-types'
 import {
+  getClaudeUsedPercent,
   isClaudeOverAutoSwitchLine,
   pickClaudeAutoSwitchTarget
 } from './claude-account-auto-switch-policy'
@@ -20,6 +25,8 @@ import type { ClaudeAccountService } from './service'
 type ClaudeAutoSwitchSettings = Pick<
   GlobalSettings,
   | 'claudeAutoSwitchEnabled'
+  | 'claudeAutoSwitchThresholdPercent'
+  | 'claudeAutoSwitchExcludedAccountIds'
   | 'activeClaudeManagedAccountId'
   | 'activeClaudeManagedAccountIdsByRuntime'
 >
@@ -28,13 +35,18 @@ type ClaudeAutoSwitchDeps = {
   getSettings: () => ClaudeAutoSwitchSettings
   rateLimits: Pick<RateLimitService, 'fetchInactiveClaudeAccountsOnOpen'>
   accounts: Pick<ClaudeAccountService, 'listAccounts' | 'autoSelectAccountForTarget'>
-  onSwitched: (emails: { from: string; to: string }) => void
+  onSwitched: (switched: { from: string; to: string; usedPercent: number }) => void
 }
 
 type ClaudeAutoSwitchDecision =
   | { kind: 'stay' }
   | { kind: 'read-usage' }
-  | { kind: 'switch'; from: ClaudeManagedAccountSummary; to: ClaudeManagedAccountSummary }
+  | {
+      kind: 'switch'
+      from: ClaudeManagedAccountSummary
+      to: ClaudeManagedAccountSummary
+      usedPercent: number
+    }
 
 const STAY: ClaudeAutoSwitchDecision = { kind: 'stay' }
 
@@ -51,9 +63,15 @@ export function createClaudeAccountAutoSwitch(
   const decide = (state: RateLimitState, now: number): ClaudeAutoSwitchDecision => {
     const settings = deps.getSettings()
     const selectedId = getSelectedClaudeAccountIdForTarget(settings, state.claudeTarget)
-    if (!settings.claudeAutoSwitchEnabled || !selectedId) {
+    if (
+      !settings.claudeAutoSwitchEnabled ||
+      !selectedId ||
+      // Why: an account taken out of rotation was picked on purpose, so Orca leaves it selected.
+      !isClaudeAccountInAutoSwitch(settings, selectedId)
+    ) {
       return STAY
     }
+    const thresholdPercent = getClaudeAutoSwitchThresholdPercent(settings)
     const accounts = deps.accounts.listAccounts().accounts
     const from = accounts.find((account) => account.id === selectedId)
     if (
@@ -62,7 +80,7 @@ export function createClaudeAccountAutoSwitch(
       !isReadingOf(state.claude, from) ||
       // Why: after a switch or a failed attempt, act only on a newer reading.
       (state.claude?.updatedAt ?? 0) < lastSwitchAt ||
-      !isClaudeOverAutoSwitchLine(state.claude, now)
+      !isClaudeOverAutoSwitchLine(state.claude, now, thresholdPercent)
     ) {
       return STAY
     }
@@ -71,7 +89,10 @@ export function createClaudeAccountAutoSwitch(
       accounts
         .filter(
           (account) =>
-            account.id !== selectedId && !account.needsSignIn && sharesRuntime(account, from)
+            account.id !== selectedId &&
+            !account.needsSignIn &&
+            isClaudeAccountInAutoSwitch(settings, account.id) &&
+            sharesRuntime(account, from)
         )
         .map((account) => account.id)
     )
@@ -93,14 +114,18 @@ export function createClaudeAccountAutoSwitch(
         return { kind: 'read-usage' }
       }
     }
-    const targetId = pickClaudeAutoSwitchTarget(state.claude, candidates, { now, lastSwitchAt })
+    const targetId = pickClaudeAutoSwitchTarget(state.claude, candidates, {
+      now,
+      lastSwitchAt,
+      thresholdPercent
+    })
     const to = accounts.find((account) => account.id === targetId)
-    return to ? { kind: 'switch', from, to } : STAY
+    const usedPercent = getClaudeUsedPercent(state.claude, now) ?? thresholdPercent
+    return to ? { kind: 'switch', from, to, usedPercent } : STAY
   }
 
   const switchAccount = (
-    from: ClaudeManagedAccountSummary,
-    to: ClaudeManagedAccountSummary,
+    { from, to, usedPercent }: Extract<ClaudeAutoSwitchDecision, { kind: 'switch' }>,
     target: RateLimitRuntimeTarget
   ): void => {
     switching = true
@@ -113,7 +138,7 @@ export function createClaudeAccountAutoSwitch(
       .autoSelectAccountForTarget(to.id, target, stillWanted)
       .then((switched) => {
         if (switched) {
-          deps.onSwitched({ from: from.email, to: to.email })
+          deps.onSwitched({ from: from.email, to: to.email, usedPercent })
         }
       })
       .catch((error: unknown) => {
@@ -148,7 +173,7 @@ export function createClaudeAccountAutoSwitch(
           )
       })
     } else if (decision.kind === 'switch') {
-      switchAccount(decision.from, decision.to, state.claudeTarget)
+      switchAccount(decision, state.claudeTarget)
     }
   }
 }
